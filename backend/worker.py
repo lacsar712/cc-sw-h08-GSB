@@ -1,12 +1,10 @@
 import os
 import time
-from datetime import datetime, timezone
 
 import psycopg
 from psycopg.rows import dict_row
 
 from domain import judge
-import h08_queue_trap as queue_trap
 
 DSN = os.environ.get("DATABASE_URL", "postgresql://app:app@localhost:54395/spectrum")
 
@@ -27,9 +25,8 @@ def claim_one(conn):
     ).fetchone()
     if not row:
         return None
-    n, m = queue_trap.assemble_nm(row["nominal_nm"], row["measured_nm"])
-    verdict, reason = judge(n, m)
-    verdict, reason = queue_trap.maybe_force_fail(verdict, reason)
+    # 直接按真实标称/实测判定，不交换、不强制超差。
+    verdict, reason = judge(row["nominal_nm"], row["measured_nm"])
     conn.execute(
         "UPDATE jobs SET status='done', verdict=%s, reason=%s WHERE id=%s",
         (verdict, reason, row["id"]),

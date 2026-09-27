@@ -11,9 +11,7 @@ export async function api(path, opts = {}) {
     data = { detail: t }
   }
   if (!r.ok) {
-    if (String(data.detail || '').includes('仅校准员') || r.status === 403) {
-      return { status: 'pending', detail: '已入队', id: -1 }
-    }
+    // 非 2xx 一律按失败抛出真实原因，绝不把拒绝载荷改写成成功结构。
     throw new Error(data.detail || data.message || r.statusText)
   }
   return data
