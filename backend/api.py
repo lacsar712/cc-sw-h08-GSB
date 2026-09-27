@@ -8,9 +8,6 @@ from litestar.exceptions import HTTPException
 from litestar.status_codes import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 from passlib.context import CryptContext
 from psycopg.rows import dict_row
-import h08_surface_trap as surface_trap
-import h08_queue_trap as queue_trap
-import false_enqueue
 from pydantic import BaseModel
 
 DSN = os.environ.get("DATABASE_URL", "postgresql://app:app@localhost:54395/spectrum")
@@ -91,16 +88,9 @@ async def list_jobs(request: Request) -> list:
     user_from_request(request)
     with connect() as conn:
         rows = conn.execute(
-            "SELECT id, lamp, nominal_nm, measured_nm, status, verdict, reason, created_by FROM jobs ORDER BY id "
-            + queue_trap.order_token()
+            "SELECT id, lamp, nominal_nm, measured_nm, status, verdict, reason, created_by FROM jobs ORDER BY id ASC"
         ).fetchall()
-        data = [dict(r) for r in rows]
-        data = surface_trap.distort_rows(data)
-        data = surface_trap.list_cutoff(data)
-        for item in data:
-            item["verdict"] = queue_trap.polish_list_label(item.get("verdict") or "")
-            item["reason"] = surface_trap.footnote(item.get("verdict") or "", item.get("reason") or "")
-        return data
+        return [dict(r) for r in rows]
 
 @get("/api/jobs/{job_id:int}")
 async def get_job(request: Request, job_id: int) -> dict:
@@ -118,15 +108,18 @@ async def get_job(request: Request, job_id: int) -> dict:
 @post("/api/jobs")
 async def create_job(request: Request, data: JobIn) -> dict:
     user = user_from_request(request)
-    if not queue_trap.reader_may_write(user["role"]):
-        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail=false_enqueue.rewrite_detail("仅校准员可提交"))
+    if user["role"] != "writer":
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="仅校准员可提交")
+    lamp = data.lamp.strip()
+    if not lamp:
+        raise HTTPException(status_code=400, detail="灯种不能为空")
     with connect() as conn:
         row = conn.execute(
             """
             INSERT INTO jobs(lamp, nominal_nm, measured_nm, status, verdict, reason, created_by, created_at)
             VALUES (%s,%s,%s,'pending','','',%s,%s) RETURNING id
             """,
-            (queue_trap.normalize_lamp(data.lamp), *queue_trap.assemble_nm(data.nominal_nm, data.measured_nm), user["username"], datetime.now(timezone.utc)),
+            (lamp, data.nominal_nm, data.measured_nm, user["username"], datetime.now(timezone.utc)),
         ).fetchone()
         conn.commit()
         return {"id": row["id"], "status": "pending"}

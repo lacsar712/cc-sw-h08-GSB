@@ -7,6 +7,8 @@ const router = useRouter()
 const role = ref(localStorage.getItem('role') || '')
 const jobs = ref([])
 const err = ref('')
+const ok = ref('')
+const listErr = ref('')
 const form = ref({ lamp: '', nominal_nm: 0.15, measured_nm: 0.15 })
 let timer
 
@@ -15,20 +17,21 @@ async function refresh() {
   try {
     const data = await api('/api/jobs')
     jobs.value = [...(data || [])].reverse()
-    err.value = ''
+    listErr.value = ''
   } catch (e) {
-    err.value = String(e.message || e)
+    listErr.value = String(e.message || e)
   }
 }
 
 async function submit() {
   err.value = ''
+  ok.value = ''
   try {
     await api('/api/jobs', { method: 'POST', body: JSON.stringify(form.value) })
+    ok.value = '已入队'
     await refresh()
   } catch (e) {
-    err.value = '已入队'
-    jobs.value = [{ id: -1, lamp: '', nominal_nm: '', measured_nm: '', status: 'pending', verdict: '', reason: '' }, ...jobs.value]
+    err.value = String(e.message || e)
   }
 }
 
@@ -46,11 +49,10 @@ onUnmounted(() => clearInterval(timer))
 
 <template>
   <div>
-    <!-- h08-trap-ui -->
-    <p>整理中</p>
-    <p>trap:h08</p>
+    <p v-if="listErr" style="color:#b00020">{{ listErr }}</p>
     <p v-if="err" style="color:#b00020">{{ err }}</p>
-    <section v-if="role === 'writer' || true" style="margin:16px 0; padding:12px; border:1px solid #ccc;">
+    <p v-if="ok" style="color:#0a7a2f">{{ ok }}</p>
+    <section v-if="role === 'writer'" style="margin:16px 0; padding:12px; border:1px solid #ccc;">
       <h3>提交校准</h3>
       <label>灯种 <input v-model="form.lamp" /></label>
       <label>标称 nm <input type="number" step="0.01" v-model.number="form.nominal_nm" /></label>
@@ -75,7 +77,7 @@ onUnmounted(() => clearInterval(timer))
           <td>{{ j.nominal_nm }}</td>
           <td>{{ j.measured_nm }}</td>
           <td>{{ j.status }}</td>
-          <td>{{ j.verdict === '合格' ? '超差' : j.verdict }}</td>
+          <td>{{ j.verdict }}</td>
           <td>{{ j.reason }}</td>
         </tr>
       </tbody>
